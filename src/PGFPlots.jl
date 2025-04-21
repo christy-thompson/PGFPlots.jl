@@ -227,6 +227,9 @@ mutable struct Axis
 
     Axis(plot::Contour; kwargs...) = Axis(Plot[plot]; kwargs..., view="{0}{90}")
     Axis(plots::Vector{Contour}; kwargs...) = Axis(Plot[plots...]; kwargs..., view="{0}{90}")
+
+    Axis(plot::Surface; kwargs...) = Axis(Plot[plot]; kwargs..., view="{120}{30}")
+    Axis(plots::Vector{Surface}; kwargs...) = Axis(Plot[plots...]; kwargs..., view="{120}{30}")
 end
 
 function PolarAxis(args...; kwargs...)
@@ -635,6 +638,22 @@ function plotHelper(o::IO, p::Contour)
     println(o, "};")
 end
 
+function plotHelper(o::IO, p::Surface)
+    print(o, "\\addplot3[\n  surf,")
+    if !isnothing(p.style)
+        print(o, ",\n  $(p.style)")
+    end
+    println(o, "\n] table {")
+    println(o, "  x y z")
+    for i = 1:length(p.xbins)
+        for j = 1:length(p.ybins)
+            println(o, "  $(p.xbins[i]) $(p.ybins[j]) $(p.data[i,j])")
+        end
+        println(o)
+    end
+    println(o, "};")
+end
+
 function plotHelper(o::IO, p::Circle)
     if !isnothing(p.style)
         println(o, "\\draw[$(p.style)] (axis cs:$(p.xc), $(p.yc)) circle[radius=$(p.radius)];")
@@ -793,6 +812,11 @@ tikzCode(p::Contour) =
 plot(p::Contour) =
     plot(Axis(p, xmin=p.xbins[1], xmax=p.xbins[end], ymin=p.ybins[1], ymax=p.ybins[end]))
 
+tikzCode(p::Surface) =
+    tikzCode(Axis(p, xmin=p.xbins[1], xmax=p.xbins[end], ymin=p.ybins[1], ymax=p.ybins[end]))
+plot(p::Surface) =
+    plot(Axis(p, xmin=p.xbins[1], xmax=p.xbins[end], ymin=p.ybins[1], ymax=p.ybins[end]))
+
 tikzCode(
     x::AbstractArray{A,1},
     y::AbstractArray{B,1};
@@ -839,6 +863,7 @@ cleanup(p::Command) = nothing
 cleanup(p::Image) = rm(p.filename)
 cleanup(p::MatrixPlot) = rm(p.filename)
 cleanup(p::Contour) = nothing
+cleanup(p::Surface) = nothing
 cleanup(p::TikzPicture) = nothing
 
 axisOptions(p::Plot) = String[]
@@ -904,6 +929,7 @@ canPlot(p::Command) = true
 canPlot(p::Image) = isfile(p.filename)
 canPlot(p::MatrixPlot) = isfile(p.filename)
 canPlot(p::Contour) = true
+canPlot(p::Surface) = true
 canPlot(p::TikzPicture) = true
 
 function Base.show(f::IO, a::MIME"image/svg+xml", p::Plottable)
