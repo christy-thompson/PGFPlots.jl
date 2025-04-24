@@ -11,6 +11,7 @@ import Contour: contours, levels
 using Requires
 using Discretizers
 using Printf
+using Dates
 
 # Define isnothing
 if VERSION < v"1.1"
@@ -215,11 +216,15 @@ mutable struct Axis
     hideAxis
     axisLines
     axisKeyword
+    dateCoordinatesIn
+    xticklabelStyle
+    yticklabelStyle
+    xticklabel
 
     Axis(plots::Vector{P};title=nothing, xlabel=nothing, xlabelStyle=nothing, ylabel=nothing, ylabelStyle=nothing, zlabel=nothing, zlabelStyle=nothing, xmin=nothing, xmax=nothing,
                     ymin=nothing, ymax=nothing, axisEqual=nothing, axisEqualImage=nothing, enlargelimits=nothing, axisOnTop=nothing, view=nothing, width=nothing,
-                    height=nothing, style=nothing, legendPos=nothing, legendStyle=nothing, xmode=nothing, ymode=nothing, colorbar=nothing, colorbarStyle=nothing, hideAxis=nothing, axisLines=nothing, axisKeyword="axis") where {P <: Plot} =
-        new(plots, title, xlabel, xlabelStyle, ylabel, ylabelStyle, zlabel, zlabelStyle, xmin, xmax, ymin, ymax, axisEqual, axisEqualImage, enlargelimits, axisOnTop, view, width, height, style, legendPos, legendStyle, xmode, ymode, colorbar, colorbarStyle, hideAxis, axisLines, axisKeyword
+                    height=nothing, style=nothing, legendPos=nothing, legendStyle=nothing, xmode=nothing, ymode=nothing, colorbar=nothing, colorbarStyle=nothing, hideAxis=nothing, axisLines=nothing, axisKeyword="axis", dateCoordinatesIn=nothing, xticklabelStyle=nothing, yticklabelStyle=nothing, xticklabel=nothing) where {P <: Plot} =
+        new(plots, title, xlabel, xlabelStyle, ylabel, ylabelStyle, zlabel, zlabelStyle, xmin, xmax, ymin, ymax, axisEqual, axisEqualImage, enlargelimits, axisOnTop, view, width, height, style, legendPos, legendStyle, xmode, ymode, colorbar, colorbarStyle, hideAxis, axisLines, axisKeyword, dateCoordinatesIn, xticklabelStyle, yticklabelStyle, xticklabel
             )
 
     Axis(;kwargs...) = Axis(Plot[]; kwargs...)
@@ -286,7 +291,11 @@ axisMap = Dict(
     :colorbar => "colorbar",
     :colorbarStyle => "colorbar style",
     :hideAxis => "hide axis",
-    :axisLines => "axis lines"
+    :axisLines => "axis lines",
+    :dateCoordinatesIn => "date coordinates in",
+    :xticklabelStyle => "xticklabel style",
+    :yticklabelStyle => "yticklabel style",
+    :xticklabel => "xticklabel"
     )
 
 mutable struct GroupPlot
@@ -357,6 +366,22 @@ function optionHelper(o::IO, m, object; brackets::Bool=true, preOptions::Vector{
         isFirst = true # temporarily true inside brackets
     end
     for (sym, str) in m
+        if sym == :xticklabel  # this has to be printed last, just a latex quirk
+            continue
+        end
+        if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
+            isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
+            if length(str) > 0
+                print(o, "$str = {$(getfield(object, sym))}") # wrap with keyword
+            else
+                print(o, string(getfield(object, sym))) # print directly, without keyword
+            end
+        end
+    end
+    for (sym, str) in m  # print the xticklabel field after everything else if it's included
+        if sym != :xticklabel
+            continue
+        end
         if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
             isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
             if length(str) > 0
@@ -419,7 +444,12 @@ function plotHelper(o::IO, p::BarChart)
         optionHelper(o, barMap, p)
         println(o, " coordinates {")
         for (k,v) in zip(p.keys, p.values)
-            println(o, "  ($k, $v)")
+            if k isa DateTime  # DateTime type requires special printing procedure
+                datetime = Dates.format(k, "yyyy-mm-dd HH:MM")
+                println(o, "  ($(datetime), $v)")
+            else
+                println(o, "  ($k, $v)")
+            end
         end
         println(o, "};")
     else
@@ -429,7 +459,11 @@ function plotHelper(o::IO, p::BarChart)
 end
 function PGFPlots.Axis(p::BarChart; kwargs...)
     # TODO : What's a better way to do this?
-    style = "ybar = 0pt,\n  bar width = 18pt,\n  xtick = data,\n  symbolic x coords = {$(Plots.symbolic_x_coords(p))}"
+    if typeof(p.keys[1]) == Date || typeof(p.keys[1]) == DateTime  # Date or DateTime axis requires no symbolic line
+        style = "ybar = 0pt,\n  bar width = 18pt,\n  xtick = data"
+    else
+        style = "ybar = 0pt,\n  bar width = 18pt,\n  xtick = data,\n  symbolic x coords = {$(Plots.symbolic_x_coords(p))}"
+    end
     kwargs_unsplat = isempty(kwargs) ? Array{Pair{Symbol,Any}}(undef,0) : convert(Array{Pair{Symbol,Any}},collect(kwargs))
     i = findfirst(tup->tup[1] == :style, kwargs_unsplat)
     if !isnothing(i)
@@ -501,7 +535,12 @@ function plotHelper(o::IO, p::Linear)
         optionHelper(o, linearMap, p)
         println(o, " coordinates {")
         for i in 1:size(p.data,2)
-            println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
+            if typeof(p.data[1, i]) == DateTime  # DateTime type requires special printing procedure
+                datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
+                println(o, "  ($(datetime), $(p.data[2,i]))")
+            else
+                println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
+            end
         end
         if p.closedCycle
             println(o, "} \\closedcycle;")
@@ -546,11 +585,21 @@ function plotHelper(o::IO, p::Scatter)
     println(o, " coordinates {")
     if size(p.data,1) == 2
         for i in 1:size(p.data,2)
-            println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
+            if p.data[1,i] isa DateTime  # DateTime type requires special printing procedure
+                datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
+                println(o, "  ($(datetime), $(p.data[2,i]))")
+            else
+                println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
+            end
         end
     else
         for i in 1:size(p.data,2)
-            println(o, "  ($(p.data[1,i]), $(p.data[2,i])) [$(p.data[3,i])]")
+            if p.data[1,i] isa DateTime  # DateTime type requires special printing procedure
+                datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
+                println(o, "  ($(datetime), $(p.data[2,i])) [$(p.data[3,i])]")
+            else
+                println(o, "  ($(p.data[1,i]), $(p.data[2,i])) [$(p.data[3,i])]")
+            end
         end
     end
     println(o, "};")
@@ -564,7 +613,12 @@ function plotHelper(o::IO, p::Linear3)
     optionHelper(o, linearMap, p)
     println(o, " coordinates {")
     for i = 1:size(p.data,2)
-        println(o, "  ($(p.data[1,i]), $(p.data[2,i]), $(p.data[3,i]))")
+        if typeof(p.data[1, i]) == DateTime  # DateTime type requires special printing procedure
+            datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
+            println(o, "  ($(datetime), $(p.data[2,i]), $(p.data[3,i]))")
+        else
+            println(o, "  ($(p.data[1,i]), $(p.data[2,i]), $(p.data[3,i]))")
+        end
     end
     println(o, "};")
     plotLegend(o, p.legendentry)

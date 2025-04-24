@@ -7,6 +7,7 @@ using Discretizers
 using StatsBase
 using Distributed
 using DelimitedFiles
+using Dates
 
 const RealRange = Tuple{Real,Real}
 
@@ -20,7 +21,7 @@ end
 abstract type Plot end
 
 mutable struct Linear <: Plot
-    data::AbstractMatrix{Real}
+    data::AbstractMatrix{Any}
     mark
     markSize
     style
@@ -29,21 +30,25 @@ mutable struct Linear <: Plot
     onlyMarks
     errorBars
     closedCycle
-    Linear(data::AbstractMatrix{T}; mark=nothing, markSize=nothing, style=nothing, legendentry=nothing, onlyMarks=nothing, errorBars=nothing, closedCycle=false, texlabel=nothing) where {T <: Real} = new(data, mark, markSize, style, legendentry, texlabel, onlyMarks, errorBars, closedCycle)
+    Linear(data::AbstractMatrix{T}; mark=nothing, markSize=nothing, style=nothing, legendentry=nothing, onlyMarks=nothing, errorBars=nothing, closedCycle=false, texlabel=nothing) where {T <: Any} = new(data, mark, markSize, style, legendentry, texlabel, onlyMarks, errorBars, closedCycle)
 end
+Linear(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Date, B<:Real} = Linear(Matrix(permutedims(hcat(x, y))); kwargs...) # Supports a Date axis
+Linear(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:DateTime, B<:Real} = Linear(Matrix(permutedims(hcat(x, y))); kwargs...) # Supports a DateTime axis
 Linear(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Real, B<:Real} = Linear(hcat(x, y)'; kwargs...)
 Linear(data::AbstractVector{A}; kwargs...) where {A<:Real} = Linear(collect(1:length(data)), data; kwargs...)
 
 mutable struct Linear3 <: Plot
-    data::AbstractMatrix{Real}
+    data::AbstractMatrix{Any}
     mark
     markSize
     style
     legendentry
     texlabel
     onlyMarks
-    Linear3(data::AbstractMatrix{T}; mark=nothing, markSize=nothing, style=nothing, legendentry=nothing, texlabel=nothing, onlyMarks=nothing) where {T<:Real} = new(data, mark, markSize, style, legendentry, texlabel, onlyMarks)
+    Linear3(data::AbstractMatrix{T}; mark=nothing, markSize=nothing, style=nothing, legendentry=nothing, texlabel=nothing, onlyMarks=nothing) where {T<:Any} = new(data, mark, markSize, style, legendentry, texlabel, onlyMarks)
 end
+Linear3(x::AbstractVector{A}, y::AbstractVector{B}, z::AbstractVector{C}; kwargs...) where {A<:Date, B<:Real, C<:Real} = Linear3(Matrix(permutedims(hcat(x, y, z))); kwargs...) # Supports a Date axis
+Linear3(x::AbstractVector{A}, y::AbstractVector{B}, z::AbstractVector{C}; kwargs...) where {A<:DateTime, B<:Real, C<:Real} = Linear3(Matrix(permutedims(hcat(x, y, z))); kwargs...) # Supports a DateTime axis
 Linear3(x::AbstractVector{A}, y::AbstractVector{B}, z::AbstractVector{C}; kwargs...) where {A<:Real, B<:Real, C<:Real} = Linear3(hcat(x, y, z)'; kwargs...)
 
 const THRESHOLD_NSAMPLES_DISC_OURSELVES = 1000 # if we have more samples than this we discretize ourselves
@@ -176,6 +181,8 @@ mutable struct Scatter <: Plot
         new(data, mark, markSize, style, legendentry, texlabel, onlyMarks, scatterClasses)
     end
 end
+Scatter(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Date, B<:Real} = Scatter(Matrix(permutedims(hcat(x, y))); kwargs...)  # Supports a Date axis
+Scatter(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:DateTime, B<:Real} = Scatter(Matrix(permutedims(hcat(x, y))); kwargs...)  # Supports a DateTime axis
 Scatter(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Real, B<:Real} = Scatter(hcat(x, y)'; kwargs...)
 Scatter(x::AbstractVector{A}, y::AbstractVector{B}, f::AbstractVector{C}; kwargs...) where {A<:Real, B<:Real, C<:Any} = Scatter(permutedims(hcat(x, y, f), [2,1]); kwargs...)
 Scatter(x::A, y::B; kwargs...) where {A<:Real, B<:Real} = Scatter(hcat(x, y)'; kwargs...)
