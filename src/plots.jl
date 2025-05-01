@@ -170,7 +170,7 @@ mutable struct Surface <: Plot
     colormap
     colorbar
     texlabel
-    Surface(data, xbins, ybins; style=nothing, colormap=nothing, colorbar=nothing, texlabel) = new(data, xbins, ybins, style, colormap, colorbar, texlabel)
+    Surface(data, xbins, ybins; style=nothing, colormap=nothing, colorbar=nothing, texlabel=nothing) = new(data, xbins, ybins, style, colormap, colorbar, texlabel)
     function Surface(f::Function, xrange::RealRange, yrange::RealRange; xbins=40, ybins=40, style=nothing, colormap=nothing, colorbar=nothing, texlabel=nothing)
         x = range(xrange[1], stop=xrange[2], length=xbins)
         y = range(yrange[1], stop=yrange[2], length=ybins)
