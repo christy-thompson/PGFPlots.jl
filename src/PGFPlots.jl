@@ -354,6 +354,19 @@ function nextOptionHelper(o::IO, isFirst::Bool, brackets::Bool, breakLine::Bool=
     return false # used to set isFirst=false
 end
 
+function _enforcePrintOrder(m) # this helper function addresses some latex quirks -- plots don't generate right unless this order is maintained while printing!
+    symsToPrintLast = [:xticklabel, :style] # a vector of the symbols that need to be printed last, in the order they should be printed
+    first = filter(kv -> !(kv[1] in symsToPrintLast), m)
+    last = filter(kv -> kv[1] in symsToPrintLast, m)
+    k = collect(keys(first))
+    v = collect(values(first))
+    for (sym, str) in last
+        push!(k, sym)
+        push!(v, str)
+    end
+    return zip(k, v)
+end
+
 function optionHelper(o::IO, m, object; brackets::Bool=true, preOptions::Vector{T}=String[], postOptions::Vector{T}=String[], wrapIn::String="") where T <: AbstractString
     isFirst = true
     for t in preOptions
@@ -365,10 +378,8 @@ function optionHelper(o::IO, m, object; brackets::Bool=true, preOptions::Vector{
         print(o, "$wrapIn = {")
         isFirst = true # temporarily true inside brackets
     end
-    for (sym, str) in m
-        if sym == :xticklabel  # this has to be printed last, just a latex quirk
-            continue
-        end
+    mOrdered = _enforcePrintOrder(m)
+    for (sym, str) in mOrdered
         if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
             isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
             if length(str) > 0
@@ -378,19 +389,32 @@ function optionHelper(o::IO, m, object; brackets::Bool=true, preOptions::Vector{
             end
         end
     end
-    for (sym, str) in m  # print the xticklabel field after everything else if it's included
-        if sym != :xticklabel
-            continue
-        end
-        if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
-            isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
-            if length(str) > 0
-                print(o, "$str = {$(getfield(object, sym))}") # wrap with keyword
-            else
-                print(o, string(getfield(object, sym))) # print directly, without keyword
-            end
-        end
-    end
+    # for (sym, str) in m
+    #     if sym == :xticklabel || sym == :style # this has to be printed last, just a latex quirk
+    #         continue
+    #     end
+    #     if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
+    #         isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
+    #         if length(str) > 0
+    #             print(o, "$str = {$(getfield(object, sym))}") # wrap with keyword
+    #         else
+    #             print(o, string(getfield(object, sym))) # print directly, without keyword
+    #         end
+    #     end
+    # end
+    # for (sym, str) in m  # print the xticklabel and style fields after everything else if it's included
+    #     if sym != :xticklabel || sym != :style
+    #         continue
+    #     end
+    #     if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
+    #         isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
+    #         if length(str) > 0
+    #             print(o, "$str = {$(getfield(object, sym))}") # wrap with keyword
+    #         else
+    #             print(o, string(getfield(object, sym))) # print directly, without keyword
+    #         end
+    #     end
+    # end
     if length(wrapIn) > 0
         print(o, "}")
         isFirst = false
@@ -438,18 +462,23 @@ function plotHelper(o::IO, p::Plots.Histogram)
     plotLegend(o, p.legendentry)
 end
 
+function _toPrint(v::DateTime) 
+    return Dates.format(v, "{yyyy-mm-dd HH:MM}")
+end 
+function _toPrint(v::Date) 
+    return "{$v}"
+end 
+function _toPrint(v::Any) 
+    return v
+end 
+
 function plotHelper(o::IO, p::BarChart)
     print(o, "\\addplot+")
     if isnothing(p.errorBars)
         optionHelper(o, barMap, p)
         println(o, " coordinates {")
         for (k,v) in zip(p.keys, p.values)
-            if k isa DateTime  # DateTime type requires special printing procedure
-                datetime = Dates.format(k, "yyyy-mm-dd HH:MM")
-                println(o, "  ($(datetime), $v)")
-            else
-                println(o, "  ($k, $v)")
-            end
+            println(o, "  ($(_toPrint(k)), $(_toPrint(v)))")
         end
         println(o, "};")
     else
@@ -459,11 +488,7 @@ function plotHelper(o::IO, p::BarChart)
 end
 function PGFPlots.Axis(p::BarChart; kwargs...)
     # TODO : What's a better way to do this?
-    if typeof(p.keys[1]) == Date || typeof(p.keys[1]) == DateTime  # Date or DateTime axis requires no symbolic line
-        style = "ybar = 0pt,\n  bar width = 18pt,\n  xtick = data"
-    else
-        style = "ybar = 0pt,\n  bar width = 18pt,\n  xtick = data,\n  symbolic x coords = {$(Plots.symbolic_x_coords(p))}"
-    end
+    style = "ybar = 0pt,\n  bar width = 18pt,\n  xtick = data,\n  symbolic x coords = {$(Plots.symbolic_x_coords(p))}"
     kwargs_unsplat = isempty(kwargs) ? Array{Pair{Symbol,Any}}(undef,0) : convert(Array{Pair{Symbol,Any}},collect(kwargs))
     i = findfirst(tup->tup[1] == :style, kwargs_unsplat)
     if !isnothing(i)
@@ -535,12 +560,7 @@ function plotHelper(o::IO, p::Linear)
         optionHelper(o, linearMap, p)
         println(o, " coordinates {")
         for i in 1:size(p.data,2)
-            if typeof(p.data[1, i]) == DateTime  # DateTime type requires special printing procedure
-                datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
-                println(o, "  ($(datetime), $(p.data[2,i]))")
-            else
-                println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
-            end
+            println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i])))")
         end
         if p.closedCycle
             println(o, "} \\closedcycle;")
@@ -585,21 +605,11 @@ function plotHelper(o::IO, p::Scatter)
     println(o, " coordinates {")
     if size(p.data,1) == 2
         for i in 1:size(p.data,2)
-            if p.data[1,i] isa DateTime  # DateTime type requires special printing procedure
-                datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
-                println(o, "  ($(datetime), $(p.data[2,i]))")
-            else
-                println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
-            end
+            println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i])))")
         end
     else
         for i in 1:size(p.data,2)
-            if p.data[1,i] isa DateTime  # DateTime type requires special printing procedure
-                datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
-                println(o, "  ($(datetime), $(p.data[2,i])) [$(p.data[3,i])]")
-            else
-                println(o, "  ($(p.data[1,i]), $(p.data[2,i])) [$(p.data[3,i])]")
-            end
+            println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i]))) [$(p.data[3,i])]")
         end
     end
     println(o, "};")
@@ -613,12 +623,7 @@ function plotHelper(o::IO, p::Linear3)
     optionHelper(o, linearMap, p)
     println(o, " coordinates {")
     for i = 1:size(p.data,2)
-        if typeof(p.data[1, i]) == DateTime  # DateTime type requires special printing procedure
-            datetime = Dates.format(p.data[1,i], "yyyy-mm-dd HH:MM")
-            println(o, "  ($(datetime), $(p.data[2,i]), $(p.data[3,i]))")
-        else
-            println(o, "  ($(p.data[1,i]), $(p.data[2,i]), $(p.data[3,i]))")
-        end
+        println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i])), $(_toPrint(p.data[3,i])))")
     end
     println(o, "};")
     plotLegend(o, p.legendentry)

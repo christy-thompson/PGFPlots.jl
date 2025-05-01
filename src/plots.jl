@@ -20,6 +20,8 @@ end
 
 abstract type Plot end
 
+XPlotValue = Union{Date, DateTime, Real}
+
 mutable struct Linear <: Plot
     data::AbstractMatrix{Any}
     mark
@@ -32,9 +34,7 @@ mutable struct Linear <: Plot
     closedCycle
     Linear(data::AbstractMatrix{T}; mark=nothing, markSize=nothing, style=nothing, legendentry=nothing, onlyMarks=nothing, errorBars=nothing, closedCycle=false, texlabel=nothing) where {T <: Any} = new(data, mark, markSize, style, legendentry, texlabel, onlyMarks, errorBars, closedCycle)
 end
-Linear(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Date, B<:Real} = Linear(Matrix(permutedims(hcat(x, y))); kwargs...) # Supports a Date axis
-Linear(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:DateTime, B<:Real} = Linear(Matrix(permutedims(hcat(x, y))); kwargs...) # Supports a DateTime axis
-Linear(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Real, B<:Real} = Linear(hcat(x, y)'; kwargs...)
+Linear(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:XPlotValue, B<:Real} = Linear(permutedims(hcat(x, y)); kwargs...) # Supports a Date axis
 Linear(data::AbstractVector{A}; kwargs...) where {A<:Real} = Linear(collect(1:length(data)), data; kwargs...)
 
 mutable struct Linear3 <: Plot
@@ -47,9 +47,7 @@ mutable struct Linear3 <: Plot
     onlyMarks
     Linear3(data::AbstractMatrix{T}; mark=nothing, markSize=nothing, style=nothing, legendentry=nothing, texlabel=nothing, onlyMarks=nothing) where {T<:Any} = new(data, mark, markSize, style, legendentry, texlabel, onlyMarks)
 end
-Linear3(x::AbstractVector{A}, y::AbstractVector{B}, z::AbstractVector{C}; kwargs...) where {A<:Date, B<:Real, C<:Real} = Linear3(Matrix(permutedims(hcat(x, y, z))); kwargs...) # Supports a Date axis
-Linear3(x::AbstractVector{A}, y::AbstractVector{B}, z::AbstractVector{C}; kwargs...) where {A<:DateTime, B<:Real, C<:Real} = Linear3(Matrix(permutedims(hcat(x, y, z))); kwargs...) # Supports a DateTime axis
-Linear3(x::AbstractVector{A}, y::AbstractVector{B}, z::AbstractVector{C}; kwargs...) where {A<:Real, B<:Real, C<:Real} = Linear3(hcat(x, y, z)'; kwargs...)
+Linear3(x::AbstractVector{A}, y::AbstractVector{B}, z::AbstractVector{C}; kwargs...) where {A<:XPlotValue, B<:Real, C<:Real} = Linear3(permutedims(hcat(x, y, z)); kwargs...)
 
 const THRESHOLD_NSAMPLES_DISC_OURSELVES = 1000 # if we have more samples than this we discretize ourselves
 
@@ -131,10 +129,19 @@ function BarChart(
     subvalues = encode(disc, values)
     return BarChart(keys, values; kwargs...)
 end
+function _toPrint(v::DateTime) 
+    return Dates.format(v, "{yyyy-mm-dd HH:MM}")
+end 
+function _toPrint(v::Date) 
+    return "{$v}"
+end 
+function _toPrint(v::Any) 
+    return v
+end 
 function symbolic_x_coords(keys::AbstractVector)
     retval = ""
     for (i,k) in enumerate(keys)
-        retval *= string(k)
+        retval *= string(_toPrint(k))
         if i != length(keys)
             retval *= ", "
         end
@@ -181,12 +188,10 @@ mutable struct Scatter <: Plot
         new(data, mark, markSize, style, legendentry, texlabel, onlyMarks, scatterClasses)
     end
 end
-Scatter(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Date, B<:Real} = Scatter(Matrix(permutedims(hcat(x, y))); kwargs...)  # Supports a Date axis
-Scatter(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:DateTime, B<:Real} = Scatter(Matrix(permutedims(hcat(x, y))); kwargs...)  # Supports a DateTime axis
-Scatter(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:Real, B<:Real} = Scatter(hcat(x, y)'; kwargs...)
-Scatter(x::AbstractVector{A}, y::AbstractVector{B}, f::AbstractVector{C}; kwargs...) where {A<:Real, B<:Real, C<:Any} = Scatter(permutedims(hcat(x, y, f), [2,1]); kwargs...)
-Scatter(x::A, y::B; kwargs...) where {A<:Real, B<:Real} = Scatter(hcat(x, y)'; kwargs...)
-Scatter(x::A, y::B, f; kwargs...) where {A<:Real, B<:Real} = Scatter(hcat(x, y, f)'; kwargs...)
+Scatter(x::AbstractVector{A}, y::AbstractVector{B}; kwargs...) where {A<:XPlotValue, B<:Real} = Scatter(permutedims(hcat(x, y)); kwargs...)  # Supports a Date, DateTime, or Real axis
+Scatter(x::AbstractVector{A}, y::AbstractVector{B}, f::AbstractVector{C}; kwargs...) where {A<:XPlotValue, B<:Real, C<:Any} = Scatter(permutedims(hcat(x, y, f), [2,1]); kwargs...)
+Scatter(x::A, y::B; kwargs...) where {A<:XPlotValue, B<:Real} = Scatter(permutedims(hcat(x, y)); kwargs...)
+Scatter(x::A, y::B, f; kwargs...) where {A<:XPlotValue, B<:Real} = Scatter(permutedims(hcat(x, y, f)); kwargs...)
 
 mutable struct Quiver <: Plot
     data::AbstractMatrix{Real}
