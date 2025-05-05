@@ -261,6 +261,14 @@ function SmithAxis(args...; kwargs...)
     return Axis(args...; kwargs..., axisKeyword = "smithchart")
 end
 
+function DateAxis(args...; kwargs...)
+    ternary_axis_string = "\\usepgfplotslibrary{dateplot}"
+    if ternary_axis_string ∉ _pgfplotspreamble
+        pushPGFPlotsPreamble(ternary_axis_string)
+    end
+    return Axis(args...; kwargs..., dateCoordinatesIn = "x")
+end
+
 const Axes = Vector{Axis}
 
 function Base.push!(g::Axis, p::Plot)
