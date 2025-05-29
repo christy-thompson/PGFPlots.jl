@@ -11,6 +11,7 @@ import Contour: contours, levels
 using Requires
 using Discretizers
 using Printf
+using Dates
 
 # Define isnothing
 if VERSION < v"1.1"
@@ -215,11 +216,15 @@ mutable struct Axis
     hideAxis
     axisLines
     axisKeyword
+    dateCoordinatesIn
+    xticklabelStyle
+    yticklabelStyle
+    xticklabel
 
     Axis(plots::Vector{P};title=nothing, xlabel=nothing, xlabelStyle=nothing, ylabel=nothing, ylabelStyle=nothing, zlabel=nothing, zlabelStyle=nothing, xmin=nothing, xmax=nothing,
                     ymin=nothing, ymax=nothing, axisEqual=nothing, axisEqualImage=nothing, enlargelimits=nothing, axisOnTop=nothing, view=nothing, width=nothing,
-                    height=nothing, style=nothing, legendPos=nothing, legendStyle=nothing, xmode=nothing, ymode=nothing, colorbar=nothing, colorbarStyle=nothing, hideAxis=nothing, axisLines=nothing, axisKeyword="axis") where {P <: Plot} =
-        new(plots, title, xlabel, xlabelStyle, ylabel, ylabelStyle, zlabel, zlabelStyle, xmin, xmax, ymin, ymax, axisEqual, axisEqualImage, enlargelimits, axisOnTop, view, width, height, style, legendPos, legendStyle, xmode, ymode, colorbar, colorbarStyle, hideAxis, axisLines, axisKeyword
+                    height=nothing, style=nothing, legendPos=nothing, legendStyle=nothing, xmode=nothing, ymode=nothing, colorbar=nothing, colorbarStyle=nothing, hideAxis=nothing, axisLines=nothing, axisKeyword="axis", dateCoordinatesIn=nothing, xticklabelStyle=nothing, yticklabelStyle=nothing, xticklabel=nothing) where {P <: Plot} =
+        new(plots, title, xlabel, xlabelStyle, ylabel, ylabelStyle, zlabel, zlabelStyle, xmin, xmax, ymin, ymax, axisEqual, axisEqualImage, enlargelimits, axisOnTop, view, width, height, style, legendPos, legendStyle, xmode, ymode, colorbar, colorbarStyle, hideAxis, axisLines, axisKeyword, dateCoordinatesIn, xticklabelStyle, yticklabelStyle, xticklabel
             )
 
     Axis(;kwargs...) = Axis(Plot[]; kwargs...)
@@ -256,6 +261,14 @@ function SmithAxis(args...; kwargs...)
     return Axis(args...; kwargs..., axisKeyword = "smithchart")
 end
 
+function DateAxis(args...; kwargs...)
+    ternary_axis_string = "\\usepgfplotslibrary{dateplot}"
+    if ternary_axis_string ∉ _pgfplotspreamble
+        pushPGFPlotsPreamble(ternary_axis_string)
+    end
+    return Axis(args...; kwargs..., dateCoordinatesIn = "x")
+end
+
 const Axes = Vector{Axis}
 
 function Base.push!(g::Axis, p::Plot)
@@ -289,7 +302,11 @@ axisMap = Dict(
     :colorbar => "colorbar",
     :colorbarStyle => "colorbar style",
     :hideAxis => "hide axis",
-    :axisLines => "axis lines"
+    :axisLines => "axis lines",
+    :dateCoordinatesIn => "date coordinates in",
+    :xticklabelStyle => "xticklabel style",
+    :yticklabelStyle => "yticklabel style",
+    :xticklabel => "xticklabel"
     )
 
 mutable struct GroupPlot
@@ -348,6 +365,19 @@ function nextOptionHelper(o::IO, isFirst::Bool, brackets::Bool, breakLine::Bool=
     return false # used to set isFirst=false
 end
 
+function _enforcePrintOrder(m) # this helper function addresses some latex quirks -- plots don't generate right unless this order is maintained while printing!
+    symsToPrintLast = [:xticklabel, :style] # a vector of the symbols that need to be printed last, in the order they should be printed
+    first = filter(kv -> !(kv[1] in symsToPrintLast), m)
+    last = filter(kv -> kv[1] in symsToPrintLast, m)
+    k = collect(keys(first))
+    v = collect(values(first))
+    for (sym, str) in last
+        push!(k, sym)
+        push!(v, str)
+    end
+    return zip(k, v)
+end
+
 function optionHelper(o::IO, m, object; brackets::Bool=true, preOptions::Vector{T}=String[], postOptions::Vector{T}=String[], wrapIn::String="") where T <: AbstractString
     isFirst = true
     for t in preOptions
@@ -359,7 +389,8 @@ function optionHelper(o::IO, m, object; brackets::Bool=true, preOptions::Vector{
         print(o, "$wrapIn = {")
         isFirst = true # temporarily true inside brackets
     end
-    for (sym, str) in m
+    mOrdered = _enforcePrintOrder(m)
+    for (sym, str) in mOrdered
         if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
             isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
             if length(str) > 0
@@ -369,6 +400,32 @@ function optionHelper(o::IO, m, object; brackets::Bool=true, preOptions::Vector{
             end
         end
     end
+    # for (sym, str) in m
+    #     if sym == :xticklabel || sym == :style # this has to be printed last, just a latex quirk
+    #         continue
+    #     end
+    #     if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
+    #         isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
+    #         if length(str) > 0
+    #             print(o, "$str = {$(getfield(object, sym))}") # wrap with keyword
+    #         else
+    #             print(o, string(getfield(object, sym))) # print directly, without keyword
+    #         end
+    #     end
+    # end
+    # for (sym, str) in m  # print the xticklabel and style fields after everything else if it's included
+    #     if sym != :xticklabel || sym != :style
+    #         continue
+    #     end
+    #     if !isnothing(getfield(object, sym)) && getfield(object, sym) != ""
+    #         isFirst = nextOptionHelper(o, isFirst, length(wrapIn)==0 && brackets, length(wrapIn)==0)
+    #         if length(str) > 0
+    #             print(o, "$str = {$(getfield(object, sym))}") # wrap with keyword
+    #         else
+    #             print(o, string(getfield(object, sym))) # print directly, without keyword
+    #         end
+    #     end
+    # end
     if length(wrapIn) > 0
         print(o, "}")
         isFirst = false
@@ -416,13 +473,23 @@ function plotHelper(o::IO, p::Plots.Histogram)
     plotLegend(o, p.legendentry)
 end
 
+function _toPrint(v::DateTime) 
+    return Dates.format(v, "{yyyy-mm-dd HH:MM}")
+end 
+function _toPrint(v::Date) 
+    return "{$v}"
+end 
+function _toPrint(v::Any) 
+    return v
+end 
+
 function plotHelper(o::IO, p::BarChart)
     print(o, "\\addplot+")
     if isnothing(p.errorBars)
         optionHelper(o, barMap, p)
         println(o, " coordinates {")
         for (k,v) in zip(p.keys, p.values)
-            println(o, "  ($k, $v)")
+            println(o, "  ($(_toPrint(k)), $(_toPrint(v)))")
         end
         println(o, "};")
     else
@@ -504,7 +571,7 @@ function plotHelper(o::IO, p::Linear)
         optionHelper(o, linearMap, p)
         println(o, " coordinates {")
         for i in 1:size(p.data,2)
-            println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
+            println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i])))")
         end
         if p.closedCycle
             println(o, "} \\closedcycle;")
@@ -549,11 +616,11 @@ function plotHelper(o::IO, p::Scatter)
     println(o, " coordinates {")
     if size(p.data,1) == 2
         for i in 1:size(p.data,2)
-            println(o, "  ($(p.data[1,i]), $(p.data[2,i]))")
+            println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i])))")
         end
     else
         for i in 1:size(p.data,2)
-            println(o, "  ($(p.data[1,i]), $(p.data[2,i])) [$(p.data[3,i])]")
+            println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i]))) [$(p.data[3,i])]")
         end
     end
     println(o, "};")
@@ -567,7 +634,7 @@ function plotHelper(o::IO, p::Linear3)
     optionHelper(o, linearMap, p)
     println(o, " coordinates {")
     for i = 1:size(p.data,2)
-        println(o, "  ($(p.data[1,i]), $(p.data[2,i]), $(p.data[3,i]))")
+        println(o, "  ($(_toPrint(p.data[1,i])), $(_toPrint(p.data[2,i])), $(_toPrint(p.data[3,i])))")
     end
     println(o, "};")
     plotLegend(o, p.legendentry)
