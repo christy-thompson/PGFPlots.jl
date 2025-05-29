@@ -25,13 +25,13 @@ jobs:
           version: '1'
       - uses: julia-actions/cache@v2
       - name: Install dependencies
-        shell: julia --color=yes --project=docs {0}
+        shell: julia --color=yes --project=doc {0}
         run: |
           using Pkg
           Pkg.develop(PackageSpec(path=pwd()))
           Pkg.instantiate()
       - name: Build and deploy
-        run: julia --color=yes --project=docs --code-coverage=user doc/make.jl
+        run: julia --color=yes --project=doc --code-coverage=user doc/make.jl
         env:
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }} # Authenticating with SSH deploy key
       - uses: julia-actions/julia-processcoverage@v1
